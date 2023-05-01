@@ -1,0 +1,58 @@
+version: 2.1
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build:
+          filters:
+            branches: 
+              only:
+                - main
+      - deploy:
+          filters:
+            branches: 
+              only:
+                - main
+          requires:
+            - build
+        
+jobs:
+  build:
+    working_directory: ~/LABCI
+    docker:
+      - image: circleci/node:latest
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: update-npm
+          command: 'sudo npm install -g npm@8.1.4'
+      - restore_cache:
+          key: dependency-cache-{{ checksum "package-lock.json" }}
+      - run:
+          name: install-npm-wee
+          command: npm install
+      - save_cache:
+          key: dependency-cache-{{ checksum "package-lock.json" }}
+          paths:
+            - ./node_modules
+      - run:
+          name: test-run
+          command: npm run test
+      - run:
+          name: docker-login
+          command: docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+      - run:
+          name: Build Docker Image
+          command: docker build -t $IMAGE_NAME:latest .
+      - run:
+          name: Publish Docker Image
+          command: docker push $IMAGE_NAME
+  deploy:
+    docker:
+      - image: circleci/node:latest
+    steps:
+      - run:
+          name: deploy-application
+          command: ssh -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_PUBLIC_DNS "export SERVER=\"$SERVER\"; export PRIVATE_KEY=\"$PRIVATE_KEY\";" "rm -rf LABCI/; ls; git clone https://github.com/AKNCI/LABCI.git; source LABCI/deploy.sh "
